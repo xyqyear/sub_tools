@@ -6,10 +6,10 @@ import copy
 import chardet
 import speech_recognition as sr
 
-STYLE = ''
+STYLE = '720P_Down_EN'
 SUB_FILE_PATH = r""
 AUDIO_FILE_PATH = r""
-MODE = ''
+MODE = '1'
 
 
 def merge_list(list1, list2):
@@ -125,11 +125,15 @@ def main():
         sub_file_path = SUB_FILE_PATH
     else:
         sub_file_path = input('请输入字幕文件路径:')
+        if '"' in sub_file_path:
+            sub_file_path = sub_file_path.replace('"', '')
 
     if AUDIO_FILE_PATH:
         audio_file_path = AUDIO_FILE_PATH
     else:
         audio_file_path = input('请输入音频文件路径:')
+        if '"' in audio_file_path:
+            audio_file_path = audio_file_path.replace('"', '')
 
     if MODE:
         mode = MODE
