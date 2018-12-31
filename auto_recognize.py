@@ -3,6 +3,7 @@
 import re
 import os
 import copy
+import time
 import chardet
 import speech_recognition as sr
 
@@ -74,9 +75,19 @@ def recognize(formats, sub_lines, audio_obj):
             duration = piece['duration']
             print('offset:{}, duration:{}'.format(offset, duration))
             audio = recognizer.record(obj, offset=offset, duration=duration)
-            result = recognizer.recognize_google(audio)
+            result = '*fail*'
+            while True:
+                try:
+                    result = recognizer.recognize_google(audio)
+                    break
+                except sr.RequestError:
+                    continue
+                except sr.UnknownValueError:
+                    break
+
             print('result:{}'.format(result))
             results.append(result)
+            time.sleep(3)
 
     return results
 
@@ -98,7 +109,7 @@ def restructure_sub(head, formats, original_lines, recognize_result, mode, style
 
         result_lines = original_lines
 
-    result_sub_text = head + '[Event]\n' + restructure_event(formats, result_lines)
+    result_sub_text = head + '[Events]\n' + restructure_event(formats, result_lines)
     return result_sub_text
 
 
