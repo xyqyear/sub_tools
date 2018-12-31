@@ -115,7 +115,7 @@ def restructure_sub(head, formats, original_lines, recognize_result, mode, style
 
 def restructure_event(formats, lines):
     format_text = 'Format: ' + ', '.join(formats)
-    dialogue_text = '\n'.join([','.join(line) for line in lines])
+    dialogue_text = '\n'.join(['Dialogue: ' + ','.join(line) for line in lines])
 
     return '\n'.join([format_text, dialogue_text])
 
