@@ -4,13 +4,19 @@ import re
 import os
 import copy
 import time
+import json
+import uuid
+import base64
+import ffmpeg
 import chardet
+import requests
 import speech_recognition as sr
 
 STYLE = '720P_Down_EN'
 SUB_FILE_PATH = r""
 AUDIO_FILE_PATH = r""
 MODE = '1'
+ENGINE = ''
 
 
 def merge_list(list1, list2):
@@ -59,7 +65,38 @@ def parse_sub(sub_text=str()):
     return head_content, formats, lines_list
 
 
-def recognize(formats, sub_lines, audio_obj):
+def ffmpeg_cut_pcm(audio_file_path, offset, duration):
+    audio_bytes, _ = (ffmpeg
+                      .input(audio_file_path)
+                      .output('-', format='s16le', acodec='pcm_s16le', ac=1, ar='16k', ss=offset, t=duration)
+                      .run(capture_stdout=True)
+                      )
+    return audio_bytes
+
+
+def recognize_baidu_one_piece(audio_bytes, token):
+    url = "http://vop.baidu.com/server_api"
+    speech_length = len(audio_bytes)
+    speech = base64.b64encode(audio_bytes).decode("utf-8")
+    mac_address = uuid.UUID(int=uuid.getnode()).hex[-12:]
+    data = {
+        "format": "pcm",
+        "rate": 16000,
+        "channel": 1,
+        "cuid": mac_address,
+        "token": token,
+        "dev_pid": 1536,
+        "speech": speech,
+        "len": speech_length,
+    }
+    headers = {"Content-Type": "application/json"}
+    r = requests.post(url, data=json.dumps(data), headers=headers)
+    # debug
+    print(r.text)
+    return json.loads(r.text)['result']
+
+
+def recognize(formats, sub_lines, audio_file_path, engine):
     pieces = list()
     results = list()
 
@@ -68,22 +105,47 @@ def recognize(formats, sub_lines, audio_obj):
         end_time = to_second(line[formats['End']])
         pieces.append({'offset': start_time, 'duration': end_time - start_time})
 
-    recognizer = sr.Recognizer()
-    for piece in pieces:
-        with audio_obj as obj:
+    if engine == 'google':
+        audio_obj = sr.AudioFile(audio_file_path)
+        recognizer = sr.Recognizer()
+        for piece in pieces:
+            with audio_obj as obj:
+                offset = piece['offset']
+                duration = piece['duration']
+                print('offset:{}, duration:{}'.format(offset, duration))
+                audio = recognizer.record(obj, offset=offset, duration=duration)
+                result = '*fail*'
+                while True:
+                    try:
+                        result = recognizer.recognize_google(audio)
+                        break
+                    except sr.RequestError:
+                        continue
+                    except sr.UnknownValueError:
+                        break
+
+                print('result:{}'.format(result))
+                results.append(result)
+                time.sleep(3)
+
+    elif engine == 'baidu':
+        with open('baidu.token', 'r', encoding='utf-8') as token_file:
+            token = token_file.read()
+
+        for piece in pieces:
             offset = piece['offset']
             duration = piece['duration']
             print('offset:{}, duration:{}'.format(offset, duration))
-            audio = recognizer.record(obj, offset=offset, duration=duration)
             result = '*fail*'
-            while True:
-                try:
-                    result = recognizer.recognize_google(audio)
-                    break
-                except sr.RequestError:
-                    continue
-                except sr.UnknownValueError:
-                    break
+
+            audio_bytes = ffmpeg_cut_pcm(audio_file_path, offset, duration)
+            try:
+                result_list = recognize_baidu_one_piece(audio_bytes, token)
+                if result_list:
+                    result = result_list[0]
+            # temporarily
+            except Exception as e:
+                print(e)
 
             print('result:{}'.format(result))
             results.append(result)
@@ -156,6 +218,11 @@ def main():
     else:
         style = input('请输入英文字幕样式:')
 
+    if ENGINE:
+        engine = ENGINE
+    else:
+        engine = input('请输入识别引擎(google代表谷歌识别,baidu代表百度语音识别):')
+
     with open(sub_file_path, 'rb') as f:
         encoding = chardet.detect(f.read())['encoding']
 
@@ -163,8 +230,7 @@ def main():
         subtitle_text = f.read()
 
     sub_head, formats, lines = parse_sub(subtitle_text)
-    audio_file = sr.AudioFile(audio_file_path)
-    recognize_result = recognize(formats, lines, audio_file)
+    recognize_result = recognize(formats, lines, audio_file_path, engine)
     result_sub_text = restructure_sub(sub_head, formats, lines, recognize_result, mode, style)
     save_sub(sub_file_path, result_sub_text, encoding)
 
